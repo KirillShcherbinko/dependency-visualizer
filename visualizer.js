@@ -2,11 +2,11 @@ import {extname} from "path";
 import { existsSync, read } from "fs";
 import axios from "axios"
 
-async function readKeys() {
+function readKeys() {
     const args = process.argv.slice(2);
 
     // Проверка на число введённых аргументов
-    if (args.length > 3) {
+    if (args.length > 4) {
         console.log("Введено слишком много аргументов");
         process.exit(1);
     } else if (args.length < 3) {
@@ -18,38 +18,45 @@ async function readKeys() {
     const keys = {
         graphProgramPath: args[0],
         packageName: args[1],
-        depth: args[2]
+        depth: args[2],
+        version: args[3] || "latest"
     };
 
     return keys;
 }
 
-async function fetchPackageData(packageName) {
-    try {
-        // Получаем последнюю версию пакета
-        const versionUrl = `https://api.nuget.org/v3-flatcontainer/${packageName}/index.json`;
-        const versionResponce = await axios.get(versionUrl);
+async function getLatestVersionPackage(packageName) {
+    // Ссылка на сам пакет
+    const allPackageUrl = `https://api.nuget.org/v3/registration5-semver1/${packageName.toLowerCase()}/index.json`;
 
-        const versions = versionResponce.data.versions;
-        
+    // Запрос на получение версии
+    return axios.get(allPackageUrl)
+        .then(res => {
+            // Поучаем данные о версии
+            const data = res.data.items;
+            const latestVersion = data[data.length - 1].upper;
 
-        if (versions.length === 0) {
-            throw new Error(`Нет доступных версий для пакета ${packageName}`)
-        }
+            return latestVersion;
+        })
 
-        const version = versions[versions.length - 1];
-
-        // Получаем сам пакет
-        const packageUrl = `https://api.nuget.org/v3-flatcontainer/${packageName}/${version}/${packageName}.${version}.nupkg`;
-        const packageResponce = await axios.get(packageUrl, {responceType: "arraybuffer"});
-
-        console.log(packageResponce.data, 234)
-
-        return packageResponce.data;
-
-    } catch(err) {
-        console.error(`"Ошибка при получении пакета ${packageName}: "${err.message}`);
-    }
+        .catch(() => {
+            console.error(`Ошибка при получении пакета ${packageName}`);
+        })
 }
 
-console.log(fetchPackageData("newtonsoft.json"));
+async function fetchPackageData(packageName, packageVersion) {
+    const packageUrl = `https://api.nuget.org/v3/catalog0/data/2023.03.08.07.46.17/${packageName}.${packageVersion}.json`
+    console.log(packageUrl)
+    return axios.get(packageUrl)
+        .then(res => {
+            const dependencies = res.data.dependencyGroups  || [];
+            return dependencies;
+        })
+        .catch(() => {
+            console.error(`Ошибка при получении пакета ${packageName}`);
+        })
+}
+
+const url = await getLatestVersionPackage("newtonsoft.json");
+const dependencies = await fetchPackageData("newtonsoft.json", url);
+console.log(dependencies);
