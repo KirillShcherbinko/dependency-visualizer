@@ -1,5 +1,5 @@
 import {extname} from "path";
-import { existsSync, read } from "fs";
+import { existsSync, mkdirSync, read } from "fs";
 import axios from "axios"
 
 function readKeys() {
@@ -149,25 +149,17 @@ async function getDependencies(packageName, packageVersion, packageTargetFramewo
         return;
     }
 
-    // Добавление нового узла
-    if (!graph.nodes.includes(packageName)) {
-        graph.nodes.push(packageName);
-    }
-
     if (packageDependencies.length !== 0) {
         // Создаем массив зависимостей для конкретного пакета
-        if (!graph.dependencies[packageName]) {
-            graph.dependencies[packageName] = [];
+        if (!graph[`${packageName} ${packageVersion}`]) {
+            graph[`${packageName} ${packageVersion}`] = [];
         }
 
         // Получаем данные о версии
         for (const dependency of packageDependencies) {
             const name = dependency.id;
             const version = await getPackageVersion(dependency.id, dependency.range);
-            graph.dependencies[packageName].push({
-                name: name,
-                version: version
-            });
+            graph[`${packageName} ${packageVersion}`].push(`${name} ${version}`);
 
             // Рекурсивный вызов для зависимостей
             await getDependencies(name, version, packageTargetFramework, depth, curDepth + 1, graph);
@@ -175,11 +167,29 @@ async function getDependencies(packageName, packageVersion, packageTargetFramewo
     }
 }
 
-const graph = {
-    nodes: [],
-    dependencies: {}
+function generatePlantUmlCode(graph) {
+    let code = "@startuml\n";
+
+    for (const [key, dependencies] of Object.entries(graph)) {
+        dependencies.forEach(dependency => {
+            code += `${key} --> ${dependency}\n`;
+        });
+    }
+
+    code += "@enduml";
+    return code;
 }
-//const version = await getPackageVersion("serilog", "latest");
-//const dependencies = await fetchDependencies("serilog", version, ".NETStandard2.0");
-await getDependencies("serilog", "latest", ".NETStandard2.0", 2, 1, graph)
-console.log(graph);
+
+function savePlantUmlCode(code, folderPath, fileName) {
+    // Создание папки, если её нет
+    if (existsSync(folderPath)) {
+        mkdirSync(folderPath, { recursive: true });
+    }
+
+
+}
+
+const graph = {}
+
+await getDependencies("serilog", "latest", ".NETStandard2.0", 10, 1, graph)
+generatePlantUmlCode(graph)
