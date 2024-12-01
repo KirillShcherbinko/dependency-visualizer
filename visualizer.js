@@ -26,15 +26,63 @@ function readKeys() {
     return keys;
 }
 
-function isVersionCompatible(version, range) {}
-
 function findVersion(versions, packageVersion) {
     // Если нужно найти последнюю версию
     if (packageVersion === "latest")
         return versions[versions.length - 1];
 
     // Если нужно найти конкретную версию
-    return versions.includes(packageVersion) ? packageVersion : "not found";
+    if(!"[(".includes(packageVersion[0])) {
+        return versions.includes(packageVersion) ? packageVersion : "not found";
+    }
+
+    // Достаём границы из диапазона
+    const range = packageVersion.split(",")
+    
+    range.forEach((element, index) => {
+        range[index] = element.replace(/[^.0-9]/g, "")
+    });
+
+    const rangeObject = {
+        leftBorder: packageVersion[0],
+        leftValue: range[0] || "",
+        rightBorder: packageVersion[packageVersion.length - 1],
+        rightValue: range[packageVersion.length - 1] || ""
+    }
+
+    // Если требуется версия, которая больше заданной
+    if (
+        "[(".includes(rangeObject.leftBorder) && 
+        ")".includes(rangeObject.rightBorder) && 
+        rangeObject.rightValue === ""
+    ) {
+        return versions[versions.length - 1];
+    }
+
+    // Если требуется версия, которая меньше заданной
+    if (
+        "(".includes(rangeObject.leftBorder) && 
+        ")]".includes(rangeObject.rightBorder) && 
+        rangeObject.leftValue === ""
+    ) {
+        let curVersion = versions[0];
+        for (const version of versions) {
+            if (curVersion < rangeObject.rightValue && 
+                ")]".includes(rangeObject.rightBorder)
+            ) {
+                curVersion = version
+            } else if (curVersion === rangeObject.rightValue && 
+                rangeObject.rightBorder === "]"
+            ) {
+                curVersion = version
+            } else {
+                return curVersion
+            }
+        }
+    }
+
+    console.log("Не удалось найти версию");
+    return false;
 }
 
 async function getPackageVersion(packageName, packageVersion) {
@@ -49,7 +97,7 @@ async function getPackageVersion(packageName, packageVersion) {
             const version = findVersion(versions, packageVersion);
   
             // Проверка наличия версии
-            if (version === "not found") {
+            if (version === "not found" || !version) {
                 throw new Error(`версия ${packageVersion} пакета не найдена`);
             }
 
@@ -74,7 +122,7 @@ async function findDependencies(dependenciesUrl, packageTargetFramework) {
 
 async function fetchDependencies(packageName, packageVersion, packageTargetFramework) {
     // Ссылка на зависисмости пакета
-    const packageUrl = `https://api.nuget.org/v3/registration5-gz-semver2/${packageName}/${packageVersion}.json`
+    const packageUrl = `https://api.nuget.org/v3/registration5-gz-semver2/${packageName.toLowerCase()}/${packageVersion}.json`
 
     return axios.get(packageUrl)
         .then(res => {
@@ -93,7 +141,7 @@ async function getDependencies(packageName, packageVersion, packageTargetFramewo
     if (curDepth > depth) {
         return;
     }
-
+    
     // Получение информации о версии
     packageVersion = await getPackageVersion(packageName, packageVersion);
 
@@ -117,13 +165,15 @@ async function getDependencies(packageName, packageVersion, packageTargetFramewo
 
         // Получаем данные о версии
         for (const dependency of packageDependencies) {
+            const name = dependency.id;
+            const version = await getPackageVersion(dependency.id, dependency.range);
             graph.dependencies[packageName].push({
-                name: dependency.id,
-                version: await getPackageVersion(dependency.id, dependency.range)
+                name: name,
+                version: version
             });
 
             // Рекурсивный вызов для зависимостей
-            await getDependencies(dependency.id, dependency.version, packageTargetFramework, depth, curDepth + 1, graph);
+            await getDependencies(name, version, packageTargetFramework, depth, curDepth + 1, graph);
         }
     }
 }
@@ -134,5 +184,5 @@ const graph = {
 }
 //const version = await getPackageVersion("serilog", "latest");
 //const dependencies = await fetchDependencies("serilog", version, ".NETStandard2.0");
-await getDependencies("newtonsoft.json", "latest", ".NETStandard2.0", 1, 1, graph)
+await getDependencies("serilog", "latest", ".NETStandard2.0", 10, 1, graph)
 console.log(graph);
