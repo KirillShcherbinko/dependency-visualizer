@@ -89,51 +89,48 @@ async function getPackageVersion(packageName, packageVersion) {
     // Ссылка на все версии пакета
     const versionsUrl = `https://api.nuget.org/v3-flatcontainer/${packageName.toLowerCase()}/index.json`;
 
-    // Запрос на получение версии
-    return axios.get(versionsUrl)
-        .then(res => {
-            // Получение версии
-            const versions = res.data.versions;
-            const version = findVersion(versions, packageVersion);
-  
-            // Проверка наличия версии
-            if (version === "not found" || !version) {
-                throw new Error(`версия ${packageVersion} пакета не найдена`);
-            }
+    try {
+        // Запрос на получение версии
+        const res = await axios.get(versionsUrl);
+        const versions = res.data.versions;
+        const version = findVersion(versions, packageVersion);
 
-            // Возврат найденной версии
-            return version;
-        })
-        .catch((err) => {
-            console.error(`Ошибка при получении версии пакета ${packageName}: ${err.message}`);
-        })
+        // Проверка наличия версии
+        if (version === "not found" || !version) {
+            throw new Error(`версия ${packageVersion} пакета не найдена`);
+        }
+
+        // Возврат найденной версии
+        return version;
+
+    } catch(err) {
+        console.error(`Ошибка при получении версии пакета ${packageName}: ${err.message}`);
+    }
 }
 
 async function findDependencies(dependenciesUrl, packageTargetFramework) {
-    return axios.get(dependenciesUrl)
-        .then(res => {
-            const packageData = res.data.dependencyGroups.find(element => element.targetFramework === packageTargetFramework);
-            return packageData.dependencies || [];
-        })
-        .catch(err => {
-            console.error(`Ошибка при получении зависисмостей: ${err.message}`);
-        })
+    try {
+        const res = await axios.get(dependenciesUrl);
+        const packageData = res.data.dependencyGroups.find(element => element.targetFramework === packageTargetFramework);
+        return packageData.dependencies || [];
+    } catch(err) {
+        console.error(`Ошибка при получении зависисмостей: ${err.message}`);
+    }
 }
 
 async function fetchDependencies(packageName, packageVersion, packageTargetFramework) {
     // Ссылка на зависисмости пакета
     const packageUrl = `https://api.nuget.org/v3/registration5-gz-semver2/${packageName.toLowerCase()}/${packageVersion}.json`
 
-    return axios.get(packageUrl)
-        .then(res => {
-            // Получаем массив зависимостей
-            const dependenciesUrl = res.data.catalogEntry;
-            const dependencies = findDependencies(dependenciesUrl, packageTargetFramework);
-            return dependencies;
-        })
-        .catch(err => {
-            console.error(`Ошибка при получении пакета ${packageName}: ${err.message}`);
-        })
+    try {
+        // Получаем массив зависимостей
+        const res = await axios.get(packageUrl);
+        const dependenciesUrl = res.data.catalogEntry;
+        const dependencies = findDependencies(dependenciesUrl, packageTargetFramework);
+        return dependencies;
+    } catch(err) {
+        console.error(`Ошибка при получении пакета ${packageName}: ${err.message}`);
+    }
 }
 
 async function getDependencies(packageName, packageVersion, packageTargetFramework, depth, curDepth, graph) {
@@ -184,5 +181,5 @@ const graph = {
 }
 //const version = await getPackageVersion("serilog", "latest");
 //const dependencies = await fetchDependencies("serilog", version, ".NETStandard2.0");
-await getDependencies("serilog", "latest", ".NETStandard2.0", 10, 1, graph)
+await getDependencies("serilog", "latest", ".NETStandard2.0", 2, 1, graph)
 console.log(graph);
