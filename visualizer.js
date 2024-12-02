@@ -11,7 +11,7 @@ export function readKeys() {
         throw new Error("Введено слишком много аргументов");
     } else if (args.length < 3) {
         throw new Error("Введено недостаточно аргументов");
-    } else if (typeof args[2] !== "Number" || args[2] <= 0) {
+    } else if (args[2] <= 0) {
         throw new Error("Некорректное значение максимальной глубины")
     }
     
@@ -34,7 +34,9 @@ export function findVersion(versions, packageVersion) {
 
     // Если нужно найти конкретную версию
     if(!"[(".includes(packageVersion[0])) {
-        return versions.includes(packageVersion) ? packageVersion : "not found";
+        if(versions.includes(packageVersion)) {
+            return packageVersion;
+        }
     }
 
     // Достаём границы из диапазона
@@ -44,46 +46,44 @@ export function findVersion(versions, packageVersion) {
         range[index] = element.replace(/[^.0-9]/g, "")
     });
 
-    const rangeObject = {
-        leftBorder: packageVersion[0],
-        leftValue: range[0] || "",
-        rightBorder: packageVersion[packageVersion.length - 1],
-        rightValue: range[packageVersion.length - 1] || ""
-    }
+    const leftBorder = packageVersion[0];
+    const leftValue = range[0] || "";
+    const rightBorder = packageVersion[packageVersion.length - 1];
+    const rightValue = range[range.length - 1] || "";
 
     // Если требуется версия, которая больше заданной
-    if (
-        "[(".includes(rangeObject.leftBorder) && 
-        ")".includes(rangeObject.rightBorder) && 
-        rangeObject.rightValue === ""
-    ) {
+    if ("[(".includes(leftBorder) && ")".includes(rightBorder) && !rightValue) {
         return versions[versions.length - 1];
     }
 
     // Если требуется версия, которая меньше заданной
-    if (
-        "(".includes(rangeObject.leftBorder) && 
-        ")]".includes(rangeObject.rightBorder) && 
-        rangeObject.leftValue === ""
-    ) {
-        let curVersion = versions[0];
+    if ("(".includes(leftBorder) && ")]".includes(rightBorder) && !leftValue) {
+        let curVersion = "";
         for (const version of versions) {
-            if (curVersion < rangeObject.rightValue && 
-                ")]".includes(rangeObject.rightBorder)
-            ) {
-                curVersion = version
-            } else if (curVersion === rangeObject.rightValue && 
-                rangeObject.rightBorder === "]"
-            ) {
-                curVersion = version
-            } else {
-                return curVersion
+            if (version < rightValue && ")]".includes(rightBorder)) {
+                curVersion = version;
+            } else if (version === rightValue && rightBorder === "]") {
+                curVersion = version;
+            } else if (curVersion) {
+                return curVersion;
             }
         }
     }
 
-    console.log("Не удалось найти версию");
-    return false;
+    if(leftValue && rightValue && leftValue < rightValue) {
+        let curVersion = "";
+        for (const version of versions) {
+            if (version < rightValue && ")]".includes(rightBorder)) {
+                curVersion = version;
+            } else if (version === rightValue && rightBorder === "]") {
+                curVersion = version;
+            } else if (curVersion && (curVersion >= leftValue && leftBorder === "[" || curVersion > leftValue && leftBorder === "(")) {
+                return curVersion;
+            } 
+        }
+    }
+
+    throw new Error("Не удалось найти версию");
 }
 
 export async function getPackageVersion(packageName, packageVersion) {
@@ -93,19 +93,13 @@ export async function getPackageVersion(packageName, packageVersion) {
     try {
         // Запрос на получение версии
         const res = await axios.get(versionsUrl);
-        const versions = res.data.versions;
-        const version = findVersion(versions, packageVersion);
-
-        // Проверка наличия версии
-        if (version === "not found" || !version) {
-            throw new Error(`версия ${packageVersion} пакета не найдена`);
-        }
+        const version = findVersion(res.data.versions, packageVersion);
 
         // Возврат найденной версии
         return version;
 
     } catch(err) {
-        console.error(`Ошибка при получении версии пакета ${packageName}: ${err.message}`);
+        throw new Error(`Ошибка при получении версии пакета ${packageName}: ${err.message}`);
     }
 }
 
@@ -115,7 +109,7 @@ export async function findDependencies(dependenciesUrl, packageTargetFramework) 
         const packageData = res.data.dependencyGroups.find(element => element.targetFramework === packageTargetFramework);
         return packageData.dependencies || [];
     } catch(err) {
-        console.error(`Ошибка при получении зависисмостей: ${err.message}`);
+        throw new Error(`Ошибка при получении зависисмостей: ${err.message}`);
     }
 }
 
@@ -131,6 +125,7 @@ export async function fetchDependencies(packageName, packageVersion, packageTarg
         return dependencies;
     } catch(err) {
         console.error(`Ошибка при получении пакета ${packageName}: ${err.message}`);
+        process.exit(1)
     }
 }
 
