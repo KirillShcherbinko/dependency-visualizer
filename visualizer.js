@@ -2,7 +2,6 @@ import {extname, join} from "path";
 import { exec } from "child_process";
 import {existsSync, mkdirSync, writeFile } from "fs";
 import axios from "axios"
-import { type } from "os";
 
 export function readKeys() {
     const args = process.argv.slice(2);
@@ -12,7 +11,7 @@ export function readKeys() {
         throw new Error("Введено слишком много аргументов");
     } else if (args.length < 3) {
         throw new Error("Введено недостаточно аргументов");
-    } else if (args[2] <= 0) {
+    } else if (typeof args[2] !== "Number" || args[2] <= 0) {
         throw new Error("Некорректное значение максимальной глубины")
     }
     
@@ -205,7 +204,7 @@ export function savePlantUmlCode(code, folderPath, fileName) {
     return filePath;
 }
 
-export function generatePlantUmlGraph(plantUmlPath, filePath) {
+function generatePlantUmlGraph(plantUmlPath, filePath) {
     // Команда для вызова PlantUML
     const command = `java -jar ${plantUmlPath} -tsvg ${filePath}`;
 
