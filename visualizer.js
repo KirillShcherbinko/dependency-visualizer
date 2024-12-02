@@ -1,19 +1,21 @@
-import {extname} from "path";
-import { existsSync, mkdirSync, read } from "fs";
+import {extname, join} from "path";
+import { exec } from "child_process";
+import {existsSync, mkdirSync, writeFile } from "fs";
 import axios from "axios"
+import { type } from "os";
 
-function readKeys() {
+export function readKeys() {
     const args = process.argv.slice(2);
 
     // Проверка на число введённых аргументов
     if (args.length > 5) {
-        console.log("Введено слишком много аргументов");
-        process.exit(1);
+        throw new Error("Введено слишком много аргументов");
     } else if (args.length < 3) {
-        console.log("Введено недостаточно аргументов");
-        process.exit(1);
+        throw new Error("Введено недостаточно аргументов");
+    } else if (args[2] <= 0) {
+        throw new Error("Некорректное значение максимальной глубины")
     }
-
+    
     // Объект с ключами командной строки
     const keys = {
         graphProgramPath: args[0],
@@ -26,7 +28,7 @@ function readKeys() {
     return keys;
 }
 
-function findVersion(versions, packageVersion) {
+export function findVersion(versions, packageVersion) {
     // Если нужно найти последнюю версию
     if (packageVersion === "latest")
         return versions[versions.length - 1];
@@ -85,7 +87,7 @@ function findVersion(versions, packageVersion) {
     return false;
 }
 
-async function getPackageVersion(packageName, packageVersion) {
+export async function getPackageVersion(packageName, packageVersion) {
     // Ссылка на все версии пакета
     const versionsUrl = `https://api.nuget.org/v3-flatcontainer/${packageName.toLowerCase()}/index.json`;
 
@@ -108,7 +110,7 @@ async function getPackageVersion(packageName, packageVersion) {
     }
 }
 
-async function findDependencies(dependenciesUrl, packageTargetFramework) {
+export async function findDependencies(dependenciesUrl, packageTargetFramework) {
     try {
         const res = await axios.get(dependenciesUrl);
         const packageData = res.data.dependencyGroups.find(element => element.targetFramework === packageTargetFramework);
@@ -118,7 +120,7 @@ async function findDependencies(dependenciesUrl, packageTargetFramework) {
     }
 }
 
-async function fetchDependencies(packageName, packageVersion, packageTargetFramework) {
+export async function fetchDependencies(packageName, packageVersion, packageTargetFramework) {
     // Ссылка на зависисмости пакета
     const packageUrl = `https://api.nuget.org/v3/registration5-gz-semver2/${packageName.toLowerCase()}/${packageVersion}.json`
 
@@ -133,7 +135,7 @@ async function fetchDependencies(packageName, packageVersion, packageTargetFrame
     }
 }
 
-async function getDependencies(packageName, packageVersion, packageTargetFramework, depth, curDepth, graph) {
+export async function getDependencies(packageName, packageVersion, packageTargetFramework, depth, curDepth, graph) {
     // Проверка на достижение максимальной глубины
     if (curDepth > depth) {
         return;
@@ -145,34 +147,36 @@ async function getDependencies(packageName, packageVersion, packageTargetFramewo
     // Получение данных о зависисмостях пакета
     const packageDependencies = await fetchDependencies(packageName, packageVersion, packageTargetFramework);
 
-    if (!packageDependencies) {
+    if (packageDependencies.length === 0) {
         return;
     }
 
-    if (packageDependencies.length !== 0) {
-        // Создаем массив зависимостей для конкретного пакета
-        if (!graph[`${packageName} ${packageVersion}`]) {
-            graph[`${packageName} ${packageVersion}`] = [];
+    // Создаем массив зависимостей для конкретного пакета
+    if (!graph[`${packageName} ${packageVersion}`]) {
+        graph[`${packageName} ${packageVersion}`] = [];
+    }
+
+     // Получаем данные о версии
+    for (const dependency of packageDependencies) {
+        const name = dependency.id;
+        const version = await getPackageVersion(dependency.id, dependency.range);
+        const fullPackageName = `${packageName} ${packageVersion}`;
+        const fullDependencyName = `${name} ${version}`;
+        if (! graph[fullPackageName].includes(fullDependencyName)){
+            graph[fullPackageName].push(fullDependencyName);
         }
 
-        // Получаем данные о версии
-        for (const dependency of packageDependencies) {
-            const name = dependency.id;
-            const version = await getPackageVersion(dependency.id, dependency.range);
-            graph[`${packageName} ${packageVersion}`].push(`${name} ${version}`);
-
-            // Рекурсивный вызов для зависимостей
-            await getDependencies(name, version, packageTargetFramework, depth, curDepth + 1, graph);
-        }
+        // Рекурсивный вызов для зависимостей
+        await getDependencies(name, version, packageTargetFramework, depth, curDepth + 1, graph);
     }
 }
 
-function generatePlantUmlCode(graph) {
+export function generatePlantUmlCode(graph) {
     let code = "@startuml\n";
 
     for (const [key, dependencies] of Object.entries(graph)) {
         dependencies.forEach(dependency => {
-            code += `${key} --> ${dependency}\n`;
+            code += `[${key}] --> [${dependency}]\n`;
         });
     }
 
@@ -180,16 +184,68 @@ function generatePlantUmlCode(graph) {
     return code;
 }
 
-function savePlantUmlCode(code, folderPath, fileName) {
+export function savePlantUmlCode(code, folderPath, fileName) {
     // Создание папки, если её нет
-    if (existsSync(folderPath)) {
+    if (!existsSync(folderPath)) {
         mkdirSync(folderPath, { recursive: true });
     }
 
+    // Создание файла
+    const filePath = join(folderPath, fileName);
 
+    // Запись файла
+    writeFile(filePath, code, err => {
+        if(!err) {
+            console.log(`Файл ${fileName} успешно сохранён`);
+        } else {
+            console.error(`Ошибка при сохранении файла: ${err.message}`);
+        }
+    })
+
+    return filePath;
 }
 
-const graph = {}
+export function generatePlantUmlGraph(plantUmlPath, filePath) {
+    // Команда для вызова PlantUML
+    const command = `java -jar ${plantUmlPath} -tsvg ${filePath}`;
 
-await getDependencies("serilog", "latest", ".NETStandard2.0", 10, 1, graph)
-generatePlantUmlCode(graph)
+    // Выполнение команды
+    exec(command, (err) => {
+        if (err) {
+            console.error(`Ошибка выполнения команды: ${err.message}`);
+            return;
+        }
+        console.log("Изображение графа успешно сохранено");
+    });
+}
+
+async function main() {
+    try {
+        const keys = readKeys();
+        const graph = {};
+        const folderPath = `./packages/${keys.packageName}`;
+        const fileName = `${keys.packageName}.puml`;
+        let curDepth = 1;
+
+        await getDependencies(
+            keys.packageName, 
+            keys.version,
+            keys.targetFramework,
+            keys.maxDepth,
+            curDepth,
+            graph
+        )
+
+        const code = generatePlantUmlCode(graph);
+        const filePath = savePlantUmlCode(code, folderPath, fileName);
+        generatePlantUmlGraph(keys.graphProgramPath, filePath);
+    }
+    catch (err) {
+        console.error(err.message);
+    }
+}
+
+main();
+
+
+// Пример команады node visualizer.js ../../Downloads/plantuml-1.2024.7.jar serilog 10
