@@ -1,6 +1,6 @@
-import {extname, join} from "path";
-import { exec } from "child_process";
-import {existsSync, mkdirSync, writeFile } from "fs";
+import { join } from "path";
+import { execSync } from "child_process";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
 import axios from "axios"
 
 export function readKeys() {
@@ -106,8 +106,11 @@ export async function getPackageVersion(packageName, packageVersion) {
 export async function findDependencies(dependenciesUrl, packageTargetFramework) {
     try {
         const res = await axios.get(dependenciesUrl);
-        const packageData = res.data.dependencyGroups.find(element => element.targetFramework === packageTargetFramework);
-        return packageData.dependencies || [];
+        if (res.data.dependencyGroups) {
+            const packageData = res.data.dependencyGroups.find(element => element.targetFramework === packageTargetFramework);
+            return packageData.dependencies || [];
+        }
+        return [];
     } catch(err) {
         throw new Error(`Ошибка при получении зависисмостей: ${err.message}`);
     }
@@ -124,8 +127,7 @@ export async function fetchDependencies(packageName, packageVersion, packageTarg
         const dependencies = findDependencies(dependenciesUrl, packageTargetFramework);
         return dependencies;
     } catch(err) {
-        console.error(`Ошибка при получении пакета ${packageName}: ${err.message}`);
-        process.exit(1)
+        throw new Error(`Ошибка при получении пакета ${packageName}: ${err.message}`);
     }
 }
 
@@ -141,13 +143,13 @@ export async function getDependencies(packageName, packageVersion, packageTarget
     // Получение данных о зависисмостях пакета
     const packageDependencies = await fetchDependencies(packageName, packageVersion, packageTargetFramework);
 
-    if (packageDependencies.length === 0) {
-        return;
-    }
-
     // Создаем массив зависимостей для конкретного пакета
     if (!graph[`${packageName} ${packageVersion}`]) {
         graph[`${packageName} ${packageVersion}`] = [];
+    }
+
+    if (packageDependencies.length === 0) {
+        return;
     }
 
      // Получаем данные о версии
@@ -188,32 +190,31 @@ export function savePlantUmlCode(code, folderPath, fileName) {
     const filePath = join(folderPath, fileName);
 
     // Запись файла
-    writeFile(filePath, code, err => {
+    writeFileSync(filePath, code, err => {
         if(!err) {
             console.log(`Файл ${fileName} успешно сохранён`);
         } else {
-            console.error(`Ошибка при сохранении файла: ${err.message}`);
+            throw new Error(`Ошибка при сохранении файла: ${err.message}`);
         }
     })
 
     return filePath;
 }
 
-function generatePlantUmlGraph(plantUmlPath, filePath) {
+export function generatePlantUmlGraph(plantUmlPath, filePath) {
     // Команда для вызова PlantUML
     const command = `java -jar ${plantUmlPath} -tsvg ${filePath}`;
 
     // Выполнение команды
-    exec(command, (err) => {
-        if (err) {
-            console.error(`Ошибка выполнения команды: ${err.message}`);
-            return;
-        }
-        console.log("Изображение графа успешно сохранено");
-    });
+    try {
+        execSync(command);
+        return "Изображение графа успешно сохранено";
+    } catch (err) {
+        throw new Error(`Ошибка выполнения команды: ${err.message}`);
+    }
 }
 
-async function main() {
+export async function main() {
     try {
         const keys = readKeys();
         const graph = {};
@@ -225,14 +226,15 @@ async function main() {
             keys.packageName, 
             keys.version,
             keys.targetFramework,
-            keys.maxDepth,
+            keys.depth,
             curDepth,
             graph
         )
 
         const code = generatePlantUmlCode(graph);
         const filePath = savePlantUmlCode(code, folderPath, fileName);
-        generatePlantUmlGraph(keys.graphProgramPath, filePath);
+        const message = generatePlantUmlGraph(keys.graphProgramPath, filePath);
+        console.log(message);
     }
     catch (err) {
         console.error(err.message);
@@ -243,3 +245,4 @@ main();
 
 
 // Пример команады node visualizer.js ../../Downloads/plantuml-1.2024.7.jar serilog 10
+// node visualizer.js ../../Downloads/plantuml-1.2024.7.jar newtonsoft.json 10 latest .NETStandard1.0

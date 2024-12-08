@@ -25,11 +25,12 @@
     },
     "testEnvironment": "node",
     "coverageReporters": [
-      "html",
       "text-summary"
     ]
   },
   "babel": {
-    "presets": ["@babel/preset-env"]
+    "presets": [
+      "@babel/preset-env"
+    ]
   }
 }
